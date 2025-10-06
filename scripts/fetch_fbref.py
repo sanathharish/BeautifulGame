@@ -117,41 +117,59 @@ def clean_headers(df: pd.DataFrame) -> pd.DataFrame:
     Also remove columns that are completely unnamed like '' by replacing them with a placeholder.
     Returns a new DataFrame with cleaned columns (does not modify input).
     """
-    df = df.copy()
-    new_cols = []
+    # First attempt to use an external, configurable mapping module
+    try:
+        from scripts import normalize as _normalize
+        # first flatten any tuple/multiindex columns to strings using our _flatten_col
+        df_flat = df.copy()
+        df_flat.columns = [_flatten_col(c) for c in df.columns]
+        mapped = _normalize.normalize_columns(df_flat)
+        # replace empty names with placeholders
+        new_cols = []
+        for i, c in enumerate(mapped.columns, start=1):
+            name = str(c)
+            if not name:
+                name = f"col_{i}"
+            new_cols.append(name)
+        mapped.columns = new_cols
+        return mapped
+    except Exception:
+        # fallback to local mapping logic if normalize module not available or fails
+        df = df.copy()
+        new_cols = []
 
-    def _map_name(name: str) -> str:
-        # map common metric names to canonical forms
-        # handle npxg before xg
-        if 'npx' in name or name.startswith('npxg'):
-            return 'npxg'
-        if name.startswith('xg') or name == 'xg' or re.search(r'(^|_)xg($|_)', name):
-            return 'xg'
-        if name.startswith('xa') or name == 'xa' or re.search(r'(^|_)xa($|_)', name):
-            return 'xa'
-        if 'poss' in name or 'possession' in name or name.endswith('%') or name.endswith('_pct'):
-            return 'possession_pct'
-        # goals: common abbreviations
-        if name in ('g', 'goals', 'gls') or name.endswith('_goals'):
-            return 'goals'
-        if name in ('mp', 'matches', 'appearances'):
-            return 'matches_played'
-        return name
+        def _map_name(name: str) -> str:
+            # map common metric names to canonical forms
+            # handle npxg before xg
+            if 'npx' in name or name.startswith('npxg'):
+                return 'npxg'
+            if name.startswith('xg') or name == 'xg' or re.search(r'(^|_)xg($|_)', name):
+                return 'xg'
+            if name.startswith('xa') or name == 'xa' or re.search(r'(^|_)xa($|_)', name):
+                return 'xa'
+            if 'poss' in name or 'possession' in name or name.endswith('%') or name.endswith('_pct'):
+                return 'possession_pct'
+            # goals: common abbreviations
+            if name in ('g', 'goals', 'gls') or name.endswith('_goals'):
+                return 'goals'
+            if name in ('mp', 'matches', 'appearances'):
+                return 'matches_played'
+            return name
 
-    for c in df.columns:
-        name = _flatten_col(c)
-        if not name:
-            # assign a placeholder for unnamed columns
-            i = len(new_cols) + 1
-            name = f"col_{i}"
-        # collapse multiple underscores
-        while '__' in name:
-            name = name.replace('__', '_')
-        # apply mapping
-        name = _map_name(name)
-        new_cols.append(name)
-    df.columns = new_cols
-    return df
+        for c in df.columns:
+            name = _flatten_col(c)
+            if not name:
+                # assign a placeholder for unnamed columns
+                i = len(new_cols) + 1
+                name = f"col_{i}"
+            # collapse multiple underscores
+            while '__' in name:
+                name = name.replace('__', '_')
+            # apply mapping
+            name = _map_name(name)
+            new_cols.append(name)
+        df.columns = new_cols
+        return df
 
 
 def find_tables_from_html(html):
@@ -238,12 +256,24 @@ def normalize_types(df: pd.DataFrame) -> pd.DataFrame:
     """Attempt to convert numeric-like columns to numeric dtype (coerce errors). Returns a copy."""
     df = df.copy()
     for col in df.columns:
-        # try to coerce to numeric; leave as-is if many NaNs
-        coerced = pd.to_numeric(df[col], errors='coerce')
-        # adopt if at least half of values converted to numbers
-        non_na = coerced.notna().sum()
-        if non_na >= max(1, len(df) // 2):
-            df[col] = coerced
+        try:
+            series = df[col]
+            # if this is not a Series (unexpected), skip
+            if not isinstance(series, pd.Series):
+                logger.debug("Skipping type normalization for column %s: not a Series", col)
+                continue
+            # try to coerce to numeric; leave as-is if many NaNs
+            coerced = pd.to_numeric(series, errors='coerce')
+            # adopt if at least half of values converted to numbers
+            non_na = coerced.notna().sum()
+            if non_na >= max(1, len(df) // 2):
+                df[col] = coerced
+        except TypeError as te:
+            logger.debug("TypeError coercing column %s: %s", col, te)
+            continue
+        except Exception as e:
+            logger.debug("Skipping normalization for column %s due to: %s", col, e)
+            continue
     return df
 
 

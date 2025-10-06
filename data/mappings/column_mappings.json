@@ -1,0 +1,22 @@
+{
+  "exact": {
+    "xg": "xg",
+    "npxg": "npxg",
+    "xa": "xa",
+    "g": "goals",
+    "goals": "goals",
+    "gls": "goals",
+    "mp": "matches_played",
+    "matches": "matches_played",
+    "appearances": "matches_played",
+    "poss": "possession_pct",
+    "possession": "possession_pct",
+    "possession_pct": "possession_pct"
+  },
+  "regex": [
+    ["(^|_)x[_ ]?g($|_)", "xg"],
+    ["(^|_)npxg($|_)", "npxg"],
+    ["poss|possession|%$", "possession_pct"],
+    ["(^|_)mp($|_)", "matches_played"]
+  ]
+}
