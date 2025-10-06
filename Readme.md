@@ -106,4 +106,4 @@ VS Code
 - Open the Testing side-bar (beaker icon) to run and debug tests.
 - Use the Debug side-bar and select "Python: Debug Tests" to run pytest under the debugger.
 
-***
+---
