@@ -302,10 +302,22 @@ def save_outputs(dfs, out_dir: Path, fmt: str = "both", clean: bool = True, norm
             from datetime import datetime
             xlsx_path = out_dir / "premier_league_2024_25_team_stats.xlsx"
             with ExcelWriter(xlsx_path, engine="openpyxl") as writer:
+                mapping_file = Path(__file__).resolve().parents[1] / 'data' / 'mappings' / 'column_mappings.json'
+                mapping_sha = None
+                try:
+                    import subprocess
+                    repo_root = Path(__file__).resolve().parents[1]
+                    git_sha = subprocess.check_output(['git', '-C', str(repo_root), 'rev-parse', 'HEAD'], stderr=subprocess.DEVNULL).decode().strip()
+                    mapping_sha = git_sha
+                except Exception:
+                    mapping_sha = None
+
                 meta = pd.DataFrame({
                     "source": [url],
                     "fetched_at": [datetime.utcnow().isoformat() + "Z"],
-                    "tables": [", ".join(dfs.keys())]
+                    "tables": [", ".join(dfs.keys())],
+                    "mapping_file": [str(mapping_file)],
+                    "mapping_git_sha": [mapping_sha]
                 })
                 meta.to_excel(writer, sheet_name="metadata", index=False)
                 for name, df_i in dfs.items():
