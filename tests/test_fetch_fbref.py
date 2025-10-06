@@ -26,3 +26,22 @@ def test_find_tables_from_html_fixture(tmp_path):
     out_dir = tmp_path / 'out'
     written = save_outputs(dfs, out_dir, fmt='csv')
     assert written['csv']
+
+
+def test_clean_headers_basic():
+    import pandas as pd
+    from scripts.fetch_fbref import clean_headers
+
+    df = pd.DataFrame([[1,2]], columns=[' Club ', ('Std','G')])
+    out = clean_headers(df)
+    assert 'club' in out.columns
+    assert 'std_g' in out.columns
+
+
+def test_clean_headers_unnamed():
+    import pandas as pd
+    from scripts.fetch_fbref import clean_headers
+
+    df = pd.DataFrame([[1,2]], columns=['', ''])
+    out = clean_headers(df)
+    assert 'col_1' in out.columns and 'col_2' in out.columns

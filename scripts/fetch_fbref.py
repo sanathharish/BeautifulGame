@@ -37,6 +37,7 @@ def parse_args():
     p.add_argument("--output", "-o", default=str(OUT_DIR / "premier_league_2024_25_team_stats.csv"), help="Output path (for CSV or XLSX)")
     p.add_argument("--format", choices=["csv", "xlsx", "both"], default="both", help="Output format: csv, xlsx, or both")
     p.add_argument("--tables", help="Comma-separated list of table id/name substrings to export (e.g. 'squads,standard')")
+    p.add_argument("--no-clean", action="store_true", help="Disable header cleaning before writing outputs")
     return p
 
 
@@ -105,6 +106,28 @@ def _flatten_col(col):
     name = name.replace("\n", " ")
     name = "_".join([p for p in name.split() if p])
     return name.lower()
+
+
+def clean_headers(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize DataFrame column names: strip, replace whitespace/newlines, lower-case, and collapse repeated separators.
+
+    Also remove columns that are completely unnamed like '' by replacing them with a placeholder.
+    Returns a new DataFrame with cleaned columns (does not modify input).
+    """
+    df = df.copy()
+    new_cols = []
+    for c in df.columns:
+        name = _flatten_col(c)
+        if not name:
+            # assign a placeholder for unnamed columns
+            i = len(new_cols) + 1
+            name = f"col_{i}"
+        # collapse multiple underscores
+        while '__' in name:
+            name = name.replace('__', '_')
+        new_cols.append(name)
+    df.columns = new_cols
+    return df
 
 
 def find_tables_from_html(html):
@@ -186,7 +209,7 @@ def find_tables_from_html(html):
     return dfs
 
 
-def save_outputs(dfs, out_dir: Path, fmt: str = "both"):
+def save_outputs(dfs, out_dir: Path, fmt: str = "both", clean: bool = True):
     out_dir.mkdir(parents=True, exist_ok=True)
     written = {
         'csv': [],
@@ -194,8 +217,12 @@ def save_outputs(dfs, out_dir: Path, fmt: str = "both"):
     }
     if fmt in ("csv", "both"):
         for name, df_i in dfs.items():
+            if clean:
+                df_to_write = clean_headers(df_i)
+            else:
+                df_to_write = df_i
             csv_path = out_dir / f"premier_league_{name}.csv"
-            df_i.to_csv(csv_path, index=False)
+            df_to_write.to_csv(csv_path, index=False)
             logger.info("Wrote CSV: %s", csv_path)
             written['csv'].append(str(csv_path))
 
@@ -213,7 +240,11 @@ def save_outputs(dfs, out_dir: Path, fmt: str = "both"):
                 meta.to_excel(writer, sheet_name="metadata", index=False)
                 for name, df_i in dfs.items():
                     sheet = _safe_name(name)
-                    df_i.to_excel(writer, sheet_name=sheet, index=False)
+                    if clean:
+                        df_to_write = clean_headers(df_i)
+                    else:
+                        df_to_write = df_i
+                    df_to_write.to_excel(writer, sheet_name=sheet, index=False)
             logger.info("Wrote workbook: %s", xlsx_path)
             written['xlsx'] = str(xlsx_path)
         except Exception as e:
@@ -253,7 +284,7 @@ def main(argv=None):
         if not dfs:
             raise ValueError("No tables parsed into DataFrames after filtering.")
 
-        out = save_outputs(dfs, OUT_PATH.parent, fmt=args.format)
+        out = save_outputs(dfs, OUT_PATH.parent, fmt=args.format, clean=(not args.no_clean))
         logger.info("Export complete: %s", out)
         return out
     except Exception as e:
