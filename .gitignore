@@ -9,7 +9,6 @@ venv/
 env/
 
 # VSCode settings
-.vscode/
 
 # Data outputs (do not check in large raw data files)
 data/raw/
