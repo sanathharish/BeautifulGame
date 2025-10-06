@@ -12,6 +12,8 @@ import pandas as pd
 from pathlib import Path
 import time
 from bs4 import BeautifulSoup, Comment
+from io import StringIO
+import re
 import logging
 
 # configure basic logging for script and tests
@@ -38,6 +40,7 @@ def parse_args():
     p.add_argument("--format", choices=["csv", "xlsx", "both"], default="both", help="Output format: csv, xlsx, or both")
     p.add_argument("--tables", help="Comma-separated list of table id/name substrings to export (e.g. 'squads,standard')")
     p.add_argument("--no-clean", action="store_true", help="Disable header cleaning before writing outputs")
+    p.add_argument("--no-types", action="store_true", help="Disable automatic column type normalization (numbers) before writing outputs")
     return p
 
 
@@ -116,6 +119,25 @@ def clean_headers(df: pd.DataFrame) -> pd.DataFrame:
     """
     df = df.copy()
     new_cols = []
+
+    def _map_name(name: str) -> str:
+        # map common metric names to canonical forms
+        # handle npxg before xg
+        if 'npx' in name or name.startswith('npxg'):
+            return 'npxg'
+        if name.startswith('xg') or name == 'xg' or re.search(r'(^|_)xg($|_)', name):
+            return 'xg'
+        if name.startswith('xa') or name == 'xa' or re.search(r'(^|_)xa($|_)', name):
+            return 'xa'
+        if 'poss' in name or 'possession' in name or name.endswith('%') or name.endswith('_pct'):
+            return 'possession_pct'
+        # goals: common abbreviations
+        if name in ('g', 'goals', 'gls') or name.endswith('_goals'):
+            return 'goals'
+        if name in ('mp', 'matches', 'appearances'):
+            return 'matches_played'
+        return name
+
     for c in df.columns:
         name = _flatten_col(c)
         if not name:
@@ -125,6 +147,8 @@ def clean_headers(df: pd.DataFrame) -> pd.DataFrame:
         # collapse multiple underscores
         while '__' in name:
             name = name.replace('__', '_')
+        # apply mapping
+        name = _map_name(name)
         new_cols.append(name)
     df.columns = new_cols
     return df
@@ -193,7 +217,8 @@ def find_tables_from_html(html):
         name = tid if tid else f"table_{i}"
         name = _safe_name(name)
         try:
-            df_i = pd.read_html(str(t))[0]
+            # Wrap literal HTML in a StringIO to avoid pandas future warning
+            df_i = pd.read_html(StringIO(str(t)))[0]
         except Exception:
             logger.warning("Skipping table %s: could not parse with pandas", name)
             continue
@@ -209,7 +234,20 @@ def find_tables_from_html(html):
     return dfs
 
 
-def save_outputs(dfs, out_dir: Path, fmt: str = "both", clean: bool = True):
+def normalize_types(df: pd.DataFrame) -> pd.DataFrame:
+    """Attempt to convert numeric-like columns to numeric dtype (coerce errors). Returns a copy."""
+    df = df.copy()
+    for col in df.columns:
+        # try to coerce to numeric; leave as-is if many NaNs
+        coerced = pd.to_numeric(df[col], errors='coerce')
+        # adopt if at least half of values converted to numbers
+        non_na = coerced.notna().sum()
+        if non_na >= max(1, len(df) // 2):
+            df[col] = coerced
+    return df
+
+
+def save_outputs(dfs, out_dir: Path, fmt: str = "both", clean: bool = True, normalize_types_flag: bool = True):
     out_dir.mkdir(parents=True, exist_ok=True)
     written = {
         'csv': [],
@@ -221,6 +259,8 @@ def save_outputs(dfs, out_dir: Path, fmt: str = "both", clean: bool = True):
                 df_to_write = clean_headers(df_i)
             else:
                 df_to_write = df_i
+            if normalize_types_flag:
+                df_to_write = normalize_types(df_to_write)
             csv_path = out_dir / f"premier_league_{name}.csv"
             df_to_write.to_csv(csv_path, index=False)
             logger.info("Wrote CSV: %s", csv_path)
@@ -244,6 +284,8 @@ def save_outputs(dfs, out_dir: Path, fmt: str = "both", clean: bool = True):
                         df_to_write = clean_headers(df_i)
                     else:
                         df_to_write = df_i
+                    if normalize_types_flag:
+                        df_to_write = normalize_types(df_to_write)
                     df_to_write.to_excel(writer, sheet_name=sheet, index=False)
             logger.info("Wrote workbook: %s", xlsx_path)
             written['xlsx'] = str(xlsx_path)
@@ -284,7 +326,7 @@ def main(argv=None):
         if not dfs:
             raise ValueError("No tables parsed into DataFrames after filtering.")
 
-        out = save_outputs(dfs, OUT_PATH.parent, fmt=args.format, clean=(not args.no_clean))
+        out = save_outputs(dfs, OUT_PATH.parent, fmt=args.format, clean=(not args.no_clean), normalize_types_flag=(not args.no_types))
         logger.info("Export complete: %s", out)
         return out
     except Exception as e:
