@@ -1,0 +1,13 @@
+requests
+pandas
+beautifulsoup4
+lxml
+pyodbc
+sqlalchemy
+python-dotenv
+schedule
+tqdm
+pytest
+selenium
+webdriver-manager
+openpyxl
