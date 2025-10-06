@@ -80,3 +80,30 @@ Notes:
 
 - The script uses a requests-first approach with a Selenium fallback when needed.
 - Output is written to `data/raw` by default; the `--output` flag can change the path.
+
+## Running tests and developer helpers
+
+Quick local test run (using the project's venv):
+
+```powershell
+# Activate your venv (Windows PowerShell) then run pytest
+.\.venv\Scripts\Activate.ps1
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+Or use the included helper script (PowerShell):
+
+```powershell
+# run tests
+.\dev.ps1 test
+
+# run lint (requires flake8 installed in the venv)
+.\dev.ps1 lint
+```
+
+VS Code
+
+- Open the Testing side-bar (beaker icon) to run and debug tests.
+- Use the Debug side-bar and select "Python: Debug Tests" to run pytest under the debugger.
+
+***
